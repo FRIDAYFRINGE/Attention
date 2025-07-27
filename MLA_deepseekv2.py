@@ -5,10 +5,8 @@ import torch.nn.functional as F
 
 class MLAv3(nn.Module):
     def __init__(self,num_head,embd_dim,latent_dim, rope_dim):
-        # inherit nn.Module
         super(MLAv3,self).__init__()
-
-        # init 
+        
         self.num_head = num_head
         self.embd_dim = embd_dim
         self.head_dim = embd_dim//num_head
@@ -57,20 +55,20 @@ class MLAv3(nn.Module):
         q_c = self.q_proj(c_q)  # [B,S, embd_dim]
 
         #  rope components
-        q_r = self.q_rope(c_q) # [batch, seq_len, num_head * rope_dim] - RoPE queries
-        k_r = self.k_rope(c_kv)  # [batch, seq_len, rope_embd]
+        q_r = self.q_rope(c_q) # [batch, S, num_head * rope_dim] - RoPE queries
+        k_r = self.k_rope(c_kv)  # [batch, S, rope_embd]
 
         k_c, v = kv.chunk(2, dim=-1)  # [B,S,embd_dim], [B,S,embd_dim]
         # reshape
         q_c = q_c.view(B,S,self.num_head,self.head_dim).transpose(1,2) #[B,S, embd_dim]-> [B,S, nh, dh]-> [B,nh,S,dh]
         k_c = k_c.view(B,S,self.num_head,self.head_dim).transpose(1,2) #[B,S, embd_dim]-> [B,S, nh, dh]-> [B,nh,S,dh]
-        v = v.view(B,S,self.num_head,self.head_dim).transpose(1,2) #
+        v = v.view(B,S,self.num_head,self.head_dim).transpose(1,2) 
 
         q_r = q_r.view(B,S,self.num_head,self.rope_dim).transpose(1,2)
-        # k_r-> [batch, seq_len, rope_dim] -> [B,1,S,rope_dim] -> we access it nh times efficiently at dim 1
+        # k_r-> [batch, S, rope_dim] -> [B,1,S,rope_dim] -> we access it nh times efficiently at dim 1
         k_r = k_r.unsqueeze(1).expand(-1,self.num_head,-1,-1) # shared across heads
 
-        # apply role to qr and kr
+        # apply rope to qr and kr
         q_r = self._apply_rope(q_r,S)
         k_r = self._apply_rope(k_r,S)
 
@@ -93,7 +91,7 @@ class MLAv3(nn.Module):
         if S <= self.max_cached_len and S in self._cos_cache:
             return self._cos_cache[S], self._sin_cache[S]
         pos = torch.arange(S, dtype=torch.float32, device=device)
-        inv_freq: torch.Tensor = self.inv_freq  # type: ignore
+        inv_freq: torch.Tensor = self.inv_freq  # type: ignore  # dumbass still giving tensor thing
         freqs = torch.outer(pos, inv_freq)    
         cos_vals = torch.cos(freqs).view(1,1,S,self.rope_half)
         sin_vals = torch.sin(freqs).view(1,1,S,self.rope_half)
@@ -116,7 +114,5 @@ class MLAv3(nn.Module):
         x_rotated = torch.empty_like(x[..., :self.rope_dim]) # B, num_head, S, rope_dim
         x_rotated[..., 0::2] = x_even * cos_vals - x_odd * sin_vals
         x_rotated[..., 1::2] = x_even * sin_vals + x_odd * cos_vals
-        
-        # Concat only if needed
         return torch.cat([x_rotated, x[..., self.rope_dim:]], dim=-1) if x.size(-1) > self.rope_dim else x_rotated
     
