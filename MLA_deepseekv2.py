@@ -114,5 +114,5 @@ class MLAv3(nn.Module):
         x_rotated = torch.empty_like(x[..., :self.rope_dim]) # B, num_head, S, rope_dim
         x_rotated[..., 0::2] = x_even * cos_vals - x_odd * sin_vals
         x_rotated[..., 1::2] = x_even * sin_vals + x_odd * cos_vals
-        return torch.cat([x_rotated, x[..., self.rope_dim:]], dim=-1) if x.size(-1) > self.rope_dim else x_rotated
+        return x_rotated
     
